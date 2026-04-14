@@ -1,0 +1,10 @@
+{
+  "name": "sheet-json-server",
+  "version": "1.0.0",
+  "description": "Node.js server that reads Google Sheets and exposes JSON API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT"
+}
