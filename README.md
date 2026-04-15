@@ -1,40 +1,44 @@
 # Google Sheet JSON API + Dashboard Integration
 
-## Run the API server
+## Setup
 
-1. Open terminal in this folder.
-2. Run:
+1. Install dependencies:
+
+npm install
+
+2. Create a .env file with your Google service account credentials:
+
+PORT=3000
+GOOGLE_SHEET_ID=18ATEk4-2YihvjwxHRAaQNpVsOEaNP3a_S1QoPvT3fVQ
+GOOGLE_SHEET_NAME=Overview Page
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your-service-account@project.iam.gserviceaccount.com
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR_KEY\n-----END PRIVATE KEY-----\n"
+
+3. Share the Google Sheet with the service account email as a Viewer.
+
+## Run the API server
 
 npm start
 
-Server will run on:
+The API runs on:
 
 http://localhost:3000
 
 ## API endpoint
 
-Default endpoint using your sheet:
+Default endpoint:
 
 http://localhost:3000/api/sheet
 
 Optional params:
 
-- sheet: full Google Sheet URL or sheet ID
-- gid: worksheet ID
+- sheet: full Google Sheet URL or spreadsheet ID
+- sheetName: worksheet name, defaults to Overview Page
 
-Examples:
+Example:
 
-http://localhost:3000/api/sheet?gid=0
-http://localhost:3000/api/sheet?sheet=18ATEk4-2YihvjwxHRAaQNpVsOEaNP3a_S1QoPvT3fVQ
+http://localhost:3000/api/sheet?sheetName=Overview%20Page
 
-## HTML integration
+## Response format
 
-The file index (5).html is already integrated with the API using vanilla JavaScript.
-
-- It calls http://localhost:3000/api/sheet on page load.
-- It fills the Workforce Roster table from the returned rows.
-- If API is unavailable, it keeps the built-in sample data.
-
-## Important
-
-For Google Sheets to work, the sheet must be accessible to anyone with the link (Viewer).
+The API returns structured JSON using the first row as headers, converts empty cells to null, and ignores fully empty rows.

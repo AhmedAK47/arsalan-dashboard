@@ -1,10 +1,14 @@
 {
   "name": "sheet-json-server",
   "version": "1.0.0",
-  "description": "Node.js server that reads Google Sheets and exposes JSON API",
+  "description": "Express API that reads a public Google Sheet and exposes JSON",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
 }
