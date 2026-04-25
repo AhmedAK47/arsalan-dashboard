@@ -3,8 +3,8 @@ const express = require('express');
 const app = express();
 const PORT = 3000;
 const DEFAULT_SHEET_ID = '18ATEk4-2YihvjwxHRAaQNpVsOEaNP3a_S1QoPvT3fVQ';
-const DEFAULT_GID = '0';
-const DEFAULT_SHEET_NAME = 'Overview Page';
+const DEFAULT_GID = '1654060697';
+const DEFAULT_SHEET_NAME = 'Data_1';
 
 app.use(express.json());
 
@@ -83,235 +83,26 @@ function tableToRows(table) {
 
 function buildPageNameMap(rows) {
   const result = {};
-  let currentSection = "Overview";
-  let isWaitingForSection = false;
-  let sectionNameFromPageName = null;
-  
-  // Initialize Overview section
-  result[currentSection] = {};
-  
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const columns = Object.keys(row);
-    const firstCol = columns[0];
-    const key = row[firstCol];
-    
-    if (!key) continue;
-    
-    const cleanKey = String(key).trim();
-    const otherCols = columns.filter(c => c !== firstCol);
-    
-    // Check if this is a "Page_Name" row (separator)
-    if (cleanKey === "Page_Name") {
-      // The section name is in the second column (Overview or column_C, etc.)
-      if (otherCols.length > 0) {
-        const secondColValue = row[otherCols[0]];
-        if (secondColValue) {
-          sectionNameFromPageName = String(secondColValue).trim();
-          isWaitingForSection = true;
-        } else {
-          // If second column is empty, check third column
-          if (otherCols.length > 1 && row[otherCols[1]]) {
-            sectionNameFromPageName = String(row[otherCols[1]]).trim();
-            isWaitingForSection = true;
-          }
-        }
-      }
-      continue;
+
+  rows.forEach((row) => {
+    const dbPage = row.DB_Page ?? row.db_page ?? row['DB Page'] ?? row.column_A;
+    const matrixName = row['Matrix Name'] ?? row.Matrix_Name ?? row.matrix_name ?? row.column_B;
+    const value = row.Value ?? row.value ?? row.column_C ?? null;
+
+    if (!hasCellValue(dbPage) || !hasCellValue(matrixName)) {
+      return;
     }
-    
-    // If we're waiting for a section, create it
-    if (isWaitingForSection && sectionNameFromPageName) {
-      currentSection = sectionNameFromPageName;
-      if (!result[currentSection]) {
-        result[currentSection] = {};
-      }
-      isWaitingForSection = false;
-      sectionNameFromPageName = null;
-      
-      // Process the current row as data for the new section
-      if (otherCols.length > 0) {
-        const firstValue = row[otherCols[0]];
-        if (firstValue !== undefined && firstValue !== null) {
-          if (otherCols.length === 1) {
-            result[currentSection][cleanKey] = firstValue;
-          } else {
-            const columnData = {};
-            otherCols.forEach(col => {
-              if (row[col] !== undefined && row[col] !== null) {
-                columnData[col] = row[col];
-              }
-            });
-            result[currentSection][cleanKey] = columnData;
-          }
-        } else {
-          // Handle case where the value is empty (like Cost Analysis items)
-          result[currentSection][cleanKey] = null;
-        }
-      }
-      continue;
+
+    const parentKey = String(dbPage).trim();
+    const childKey = String(matrixName).trim();
+
+    if (!result[parentKey]) {
+      result[parentKey] = {};
     }
-    
-    // Skip rows that are just section headers without values
-    const hasValues = otherCols.some(c => row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== '');
-    
-    if (!hasValues && cleanKey && cleanKey !== "Page_Name") {
-      // This might be a section header with no data yet
-      if (!result[cleanKey]) {
-        currentSection = cleanKey;
-        result[currentSection] = {};
-      }
-      continue;
-    }
-    
-    // Regular data row with values
-    if (cleanKey) {
-      if (!result[currentSection]) {
-        result[currentSection] = {};
-      }
-      
-      // Handle multiple columns
-      if (otherCols.length > 1) {
-        const columnData = {};
-        let hasAnyValue = false;
-        otherCols.forEach(col => {
-          if (row[col] !== undefined && row[col] !== null && String(row[col]).trim() !== '') {
-            columnData[col] = row[col];
-            hasAnyValue = true;
-          }
-        });
-        
-        if (hasAnyValue) {
-          // Check if this is a single value that should be flattened
-          if (Object.keys(columnData).length === 1 && columnData[otherCols[0]] !== undefined) {
-            result[currentSection][cleanKey] = columnData[otherCols[0]];
-          } else {
-            result[currentSection][cleanKey] = columnData;
-          }
-        } else {
-          result[currentSection][cleanKey] = null;
-        }
-      } 
-      // Handle single column
-      else if (otherCols.length === 1) {
-        const value = row[otherCols[0]];
-        if (value !== undefined && value !== null && String(value).trim() !== '') {
-          result[currentSection][cleanKey] = value;
-        } else {
-          result[currentSection][cleanKey] = null;
-        }
-      } else if (otherCols.length === 0) {
-        // No data columns, set as null
-        result[currentSection][cleanKey] = null;
-      }
-    }
-  }
-  
-  // Special handling to separate Pipeline Snapshot data
-  if (result["Pipeline Snapshot"]) {
-    const snapshotData = result["Pipeline Snapshot"];
-    const forecastData = {};
-    const activeData = {};
-    
-    Object.keys(snapshotData).forEach(key => {
-      if (key.startsWith("Forecast-")) {
-        const date = key.replace("Forecast-", "");
-        forecastData[date] = snapshotData[key];
-      } else if (key.startsWith("Active-")) {
-        const date = key.replace("Active-", "");
-        activeData[date] = snapshotData[key];
-      }
-    });
-    
-    if (Object.keys(forecastData).length > 0) {
-      result["Pipeline Snapshot"]["Forecast"] = forecastData;
-    }
-    if (Object.keys(activeData).length > 0) {
-      result["Pipeline Snapshot"]["Active"] = activeData;
-    }
-    
-    // Remove the old flat data
-    Object.keys(snapshotData).forEach(key => {
-      if (key.startsWith("Forecast-") || key.startsWith("Active-")) {
-        delete result["Pipeline Snapshot"][key];
-      }
-    });
-  }
-  
-  // Move Candidate Pipeline data to its own section if it's in Overview
-  if (result["Overview"] && result["Overview"]["Riders Total Pipeline"]) {
-    if (!result["Candidate Pipeline"]) {
-      result["Candidate Pipeline"] = {};
-    }
-    result["Candidate Pipeline"]["Riders Total Pipeline"] = result["Overview"]["Riders Total Pipeline"];
-    result["Candidate Pipeline"]["Drivers Total Pipeline"] = result["Overview"]["Drivers Total Pipeline"];
-    delete result["Overview"]["Riders Total Pipeline"];
-    delete result["Overview"]["Drivers Total Pipeline"];
-  }
-  
-  // Move License School data to its own section
-  if (result["Overview"]) {
-    const licenseData = {};
-    const licenseKeys = ["license School", "Riders in School", "Drivers In School", "Awaiting for registration", "Avg days for license"];
-    let hasLicenseData = false;
-    
-    licenseKeys.forEach(key => {
-      if (result["Overview"][key] !== undefined) {
-        licenseData[key] = result["Overview"][key];
-        delete result["Overview"][key];
-        hasLicenseData = true;
-      }
-    });
-    
-    if (hasLicenseData && !result["In Licence School"]) {
-      result["In Licence School"] = licenseData;
-    }
-  }
-  
-  // Move Leave & Off Boarded data to its own section
-  if (result["Overview"]) {
-    const leaveData = {};
-    const leaveKeys = ["Current on leave", "Riders Currently on leave", "Drivers Currently on leave", "Off Boarded", "Resigned", "Terminated", "Contract End", "Other"];
-    let hasLeaveData = false;
-    
-    leaveKeys.forEach(key => {
-      if (result["Overview"][key] !== undefined) {
-        leaveData[key] = result["Overview"][key];
-        delete result["Overview"][key];
-        hasLeaveData = true;
-      }
-    });
-    
-    if (hasLeaveData && !result["Off boarding & Leave"]) {
-      result["Off boarding & Leave"] = leaveData;
-    }
-  }
-  
-  // Ensure Cost Analysis section exists
-  if (!result["Cost Analysis"]) {
-    result["Cost Analysis"] = {};
-  }
-  
-  // Add Cost Analysis items if they exist in Overview
-  if (result["Overview"]) {
-    const costKeys = ["Total Cost", "Direct cost break up", "Indirect cost break up", "Cost per head"];
-    costKeys.forEach(key => {
-      if (result["Overview"][key] !== undefined) {
-        result["Cost Analysis"][key] = result["Overview"][key];
-        delete result["Overview"][key];
-      } else if (!result["Cost Analysis"][key]) {
-        result["Cost Analysis"][key] = null;
-      }
-    });
-  }
-  
-  // Clean up empty sections
-  Object.keys(result).forEach(section => {
-    if (Object.keys(result[section]).length === 0) {
-      delete result[section];
-    }
+
+    result[parentKey][childKey] = hasCellValue(value) ? value : null;
   });
-  
+
   return result;
 }
 
