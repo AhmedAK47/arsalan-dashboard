@@ -51,6 +51,92 @@ function hasCellValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== '';
 }
 
+function getCellValue(cell) {
+  if (!cell) return null;
+  if (hasCellValue(cell.v)) return cell.v;
+  if (hasCellValue(cell.f)) return cell.f;
+  return null;
+}
+
+function normalizeKey(key) {
+  return String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function pickRowValue(row) {
+  if (!row || typeof row !== 'object') return null;
+
+  const preferred = [row.Value, row.value, row.column_C, row.column_D, row.column_E];
+  for (const candidate of preferred) {
+    if (hasCellValue(candidate)) return candidate;
+  }
+
+  const excluded = new Set(['dbpage', 'matrixname', 'columna', 'columnb']);
+  for (const [key, value] of Object.entries(row)) {
+    if (excluded.has(normalizeKey(key))) continue;
+    if (hasCellValue(value)) return value;
+  }
+
+  return null;
+}
+
+function parseMonthLabel(label) {
+  const match = String(label || '').trim().match(/^([A-Za-z]+)-?(\d{2}|\d{4})$/);
+  if (!match) return null;
+
+  const monthToken = match[1].slice(0, 3).toLowerCase();
+  const monthIndex = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+  }[monthToken];
+  if (monthIndex === undefined) return null;
+
+  const yearToken = Number(match[2]);
+  const year = match[2].length === 2 ? 2000 + yearToken : yearToken;
+  return new Date(year, monthIndex, 1);
+}
+
+function formatMonthLabel(date) {
+  const month = date.toLocaleString('en-US', { month: 'short' });
+  return `${month}-${date.getFullYear()}`;
+}
+
+function inferLatestOverviewMonth(pageData) {
+  const overview = pageData?.Overview;
+  if (!overview || typeof overview !== 'object') return null;
+
+  const months = Object.keys(overview)
+    .map((key) => key.match(/^Forecast-(.+)$/)?.[1] || key.match(/^Active-(.+)$/)?.[1] || null)
+    .filter(Boolean)
+    .map(parseMonthLabel)
+    .filter(Boolean)
+    .sort((a, b) => a - b);
+
+  return months.length ? months[months.length - 1] : null;
+}
+
+function ensureLicenseSchoolMonthLabels(pageData) {
+  const license = pageData?.['In Licence School'];
+  if (!license || typeof license !== 'object') return;
+
+  const hasCurrent = hasCellValue(license.Current_Month) || hasCellValue(license.Cuurent_Month);
+  const hasLast = hasCellValue(license.Last_Month);
+  if (hasCurrent && hasLast) return;
+
+  const latest = inferLatestOverviewMonth(pageData) || new Date();
+  const currentDate = new Date(latest.getFullYear(), latest.getMonth(), 1);
+  const previousDate = new Date(latest.getFullYear(), latest.getMonth() - 1, 1);
+
+  if (!hasCurrent) {
+    const current = formatMonthLabel(currentDate);
+    license.Current_Month = current;
+    license.Cuurent_Month = current;
+  }
+
+  if (!hasLast) {
+    license.Last_Month = formatMonthLabel(previousDate);
+  }
+}
+
 function tableToRows(table) {
   const rawHeaders = (table.cols || []).map((col, index) => normalizeHeader(col.label, index));
   
@@ -66,7 +152,7 @@ function tableToRows(table) {
       
       visibleColumns.forEach(({ header, index }) => {
         const cell = row.c && row.c[index];
-        const value = cell && cell.v !== undefined ? cell.v : null;
+        const value = getCellValue(cell);
         
         if (hasCellValue(value)) {
           out[header] = value;
@@ -87,7 +173,7 @@ function buildPageNameMap(rows) {
   rows.forEach((row) => {
     const dbPage = row.DB_Page ?? row.db_page ?? row['DB Page'] ?? row.column_A;
     const matrixName = row['Matrix Name'] ?? row.Matrix_Name ?? row.matrix_name ?? row.column_B;
-    const value = row.Value ?? row.value ?? row.column_C ?? null;
+    const value = pickRowValue(row);
 
     if (!hasCellValue(dbPage) || !hasCellValue(matrixName)) {
       return;
@@ -123,6 +209,7 @@ async function fetchSheetAsJson(sheetId, gid, sheetName) {
   const table = parsed.table || { cols: [], rows: [] };
   const { headers, rows } = tableToRows(table);
   const pageData = buildPageNameMap(rows);
+  ensureLicenseSchoolMonthLabels(pageData);
 
   return {
     ok: true,
